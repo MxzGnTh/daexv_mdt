@@ -14,6 +14,7 @@ INSERT INTO `items`(`item`, `label`, `limit`, `can_remove`, `type`, `usable`) VA
 
 CREATE TABLE IF NOT EXISTS `daexv_mdt_individuals` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `char_id` INT NULL,
     `identifier` VARCHAR(60) NOT NULL,
     `firstname` VARCHAR(50) NOT NULL,
     `lastname` VARCHAR(50) NOT NULL,
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS `daexv_mdt_individuals` (
     `updated_by_name` VARCHAR(100),
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_char_id (`char_id`),
     INDEX idx_identifier (`identifier`),
     INDEX idx_name (`firstname`, `lastname`),
     INDEX idx_status (`status`)
@@ -212,6 +214,7 @@ CREATE TABLE IF NOT EXISTS `daexv_mdt_audit` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 ALTER TABLE `daexv_mdt_individuals` MODIFY `status` ENUM('clear','wanted','dangerous','deceased','missing','archived') DEFAULT 'clear';
+ALTER TABLE `daexv_mdt_individuals` ADD COLUMN IF NOT EXISTS `char_id` INT NULL AFTER `id`;
 ALTER TABLE `daexv_mdt_individuals` ADD COLUMN IF NOT EXISTS `created_by_name` VARCHAR(100) NULL AFTER `created_by`;
 ALTER TABLE `daexv_mdt_individuals` ADD COLUMN IF NOT EXISTS `updated_by_name` VARCHAR(100) NULL AFTER `updated_by`;
 ALTER TABLE `daexv_mdt_charges` ADD COLUMN IF NOT EXISTS `category` VARCHAR(50) DEFAULT '' AFTER `penal_code`;
@@ -241,6 +244,10 @@ CREATE TABLE IF NOT EXISTS `daexv_mdt_fines` (
     `category` VARCHAR(50) DEFAULT '',
     `description` TEXT,
     `location` VARCHAR(200) DEFAULT '',
+    `location_detail` VARCHAR(200) DEFAULT '',
+    `state_name` VARCHAR(80) NOT NULL DEFAULT '',
+    `county_name` VARCHAR(80) NOT NULL DEFAULT '',
+    `town_name` VARCHAR(80) NOT NULL DEFAULT '',
     `amount` INT NOT NULL DEFAULT 0,
     `status` ENUM('pending','paid','overdue','cancelled','waived') DEFAULT 'pending',
     `due_date` TIMESTAMP NULL,
@@ -291,6 +298,10 @@ INSERT IGNORE INTO `daexv_mdt_fine_presets` (`penal_code`, `charge`, `category`,
 ('CP-402', 'Unlawful Discharge', 'WEAPONS', 100, 'Firing a weapon in a restricted area');
 
 ALTER TABLE `daexv_mdt_fines` ADD COLUMN IF NOT EXISTS `legal_doc_ref` INT DEFAULT NULL AFTER `charge_ref_id`;
+ALTER TABLE `daexv_mdt_fines` ADD COLUMN IF NOT EXISTS `location_detail` VARCHAR(200) DEFAULT '' AFTER `location`;
+ALTER TABLE `daexv_mdt_fines` ADD COLUMN IF NOT EXISTS `state_name` VARCHAR(80) NOT NULL DEFAULT '' AFTER `location_detail`;
+ALTER TABLE `daexv_mdt_fines` ADD COLUMN IF NOT EXISTS `county_name` VARCHAR(80) NOT NULL DEFAULT '' AFTER `state_name`;
+ALTER TABLE `daexv_mdt_fines` ADD COLUMN IF NOT EXISTS `town_name` VARCHAR(80) NOT NULL DEFAULT '' AFTER `county_name`;
 
 -- ============================================================
 -- v2: TABLAS NUEVAS

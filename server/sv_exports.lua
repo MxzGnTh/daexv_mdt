@@ -83,7 +83,7 @@ exports('GetLegalDocsForCitizen', function(identifier)
     return MySQL.query.await('SELECT * FROM daexv_mdt_legal_refs WHERE identifier = ? ORDER BY issued_at DESC', { tostring(identifier or '') }) or {}
 end)
 
-exports('CreateFineFromLegalDoc', function(citizenIdentifier, amount, charge, docRefId, officerIdentifier, officerName)
+exports('CreateFineFromLegalDoc', function(citizenIdentifier, amount, charge, docRefId, officerIdentifier, officerName, jurisdictionData)
     citizenIdentifier = tostring(citizenIdentifier or '')
     amount            = ToInt(amount, 0)
     charge            = Trim(tostring(charge or ''), 255)
@@ -103,9 +103,24 @@ exports('CreateFineFromLegalDoc', function(citizenIdentifier, amount, charge, do
         citizenName = Trim((indivRows[1].firstname or '') .. ' ' .. (indivRows[1].lastname or ''), 100)
     end
 
+    jurisdictionData = type(jurisdictionData) == 'table' and jurisdictionData or {}
+    local stateName, countyName, townName = '', '', ''
+    local locationDetail = Trim(jurisdictionData.locationDetail or jurisdictionData.location_detail, 200)
+    local resolvedState, resolvedCounty, resolvedTown = ResolveFineJurisdiction(
+        jurisdictionData.stateName or jurisdictionData.state_name,
+        jurisdictionData.countyName or jurisdictionData.county_name,
+        jurisdictionData.townName or jurisdictionData.town_name
+    )
+    if resolvedState and resolvedCounty and resolvedTown then
+        stateName = resolvedState
+        countyName = resolvedCounty
+        townName = resolvedTown
+    end
+    local location = BuildFineJurisdiction(stateName, countyName, townName)
+
     local fineId = MySQL.insert.await(
-        "INSERT INTO daexv_mdt_fines (individual_id, citizen_identifier, citizen_name, charge, amount, status, due_date, officer_identifier, officer_name, legal_doc_ref) VALUES (?,?,?,?,?,'pending',DATE_ADD(NOW(), INTERVAL ? DAY),?,?,?)",
-        { indivId, citizenIdentifier, citizenName, charge, amount, ToInt(Config.Fines.OverdueDays, 3), officerIdentifier, officerName, ToInt(docRefId, nil) }
+        "INSERT INTO daexv_mdt_fines (individual_id, citizen_identifier, citizen_name, charge, location, location_detail, state_name, county_name, town_name, amount, status, due_date, officer_identifier, officer_name, legal_doc_ref) VALUES (?,?,?,?,?,?,?,?,?,?,'pending',DATE_ADD(NOW(), INTERVAL ? DAY),?,?,?)",
+        { indivId, citizenIdentifier, citizenName, charge, location, locationDetail, stateName, countyName, townName, amount, ToInt(Config.Fines.OverdueDays, 3), officerIdentifier, officerName, ToInt(docRefId, nil) }
     )
 
     return fineId

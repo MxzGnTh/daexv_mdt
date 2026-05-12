@@ -111,6 +111,49 @@ Config.Fines = {
     NotifyOnPayment = true,
 }
 
+Config.FineJurisdictions = {
+    {
+        name = 'New Hanover',
+        counties = {
+            { name = 'The Heartlands', towns = { 'Valentine', 'Emerald Ranch', 'Flatneck Station', 'Cornwall Kerosene & Tar' } },
+            { name = 'Cumberland Forest', towns = { 'Bacchus Station', 'Fort Wallace' } },
+            { name = 'Roanoke Ridge', towns = { 'Annesburg', 'Van Horn', 'Butcher Creek' } },
+        },
+    },
+    {
+        name = 'West Elizabeth',
+        counties = {
+            { name = 'Great Plains', towns = { 'Blackwater', 'Beecher\'s Hope' } },
+            { name = 'Tall Trees', towns = { 'Manzanita Post', 'Aurora Basin' } },
+            { name = 'Big Valley', towns = { 'Strawberry', 'Wallace Station' } },
+        },
+    },
+    {
+        name = 'Lemoyne',
+        counties = {
+            { name = 'Scarlett Meadows', towns = { 'Rhodes', 'Braithwaite Manor', 'Caliga Hall' } },
+            { name = 'Bluewater Marsh', towns = { 'Lagras', 'Lakay' } },
+            { name = 'Bayou Nwa', towns = { 'Saint Denis', 'Pleasance' } },
+        },
+    },
+    {
+        name = 'Ambarino',
+        counties = {
+            { name = 'Grizzlies East', towns = { 'Wapiti', 'Cotorra Springs' } },
+            { name = 'Grizzlies West', towns = { 'Colter' } },
+        },
+    },
+    {
+        name = 'New Austin',
+        counties = {
+            { name = 'Hennigan\'s Stead', towns = { 'Armadillo', 'MacFarlane\'s Ranch' } },
+            { name = 'Cholla Springs', towns = { 'Tumbleweed', 'Ridgewood Farm' } },
+            { name = 'Rio Bravo', towns = { 'Fort Mercer', 'Benedict Point' } },
+            { name = 'Gaptooth Ridge', towns = { 'Gaptooth Breach' } },
+        },
+    },
+}
+
 Config.Bail = {
     BaseBailMultiplier       = 2,
     RepeatOffenderMultiplier = 1.5,

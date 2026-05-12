@@ -16,6 +16,125 @@ local validPlea = { guilty=true, not_guilty=true, no_plea=true }
 local validGangStatus = { active=true, dismantled=true, unknown=true }
 local validGangMemberStatus = { active=true, inactive=true, deceased=true, unknown=true }
 
+local function NormalizeMdtPenalCode(rawPenalCode)
+    if type(rawPenalCode) ~= 'table' then
+        return Config.PenalCode, 'config', true
+    end
+
+    local normalized = {}
+    local totalCategories = 0
+
+    for index, category in ipairs(rawPenalCode) do
+        if type(category) == 'table' then
+            local categoryLabel = Trim(category.label or category.category or category.name or ('Categoria ' .. index), 80)
+            local categoryKey = tostring(category.key or category.id or categoryLabel):upper():gsub('%s+', '_'):gsub('[^%w_]', '')
+            if categoryKey == '' then
+                categoryKey = 'CATEGORY_' .. tostring(index)
+            end
+
+            local charges = {}
+            for _, article in ipairs(category.articles or category.charges or {}) do
+                if type(article) == 'table' and Trim(article.code or '', 20) ~= '' then
+                    charges[#charges + 1] = {
+                        code = Trim(article.code or '', 20),
+                        name = Trim(article.name or article.title or 'Articulo', 120),
+                        time = ToInt(article.time or article.sentence, 0),
+                        fine = ToInt(article.fine, 0),
+                        description = Trim(article.description or '', 255),
+                        severity = Trim(article.severity or '', 30),
+                    }
+                end
+            end
+
+            normalized[categoryKey] = {
+                label = categoryLabel,
+                charges = charges,
+            }
+            totalCategories = totalCategories + 1
+        end
+    end
+
+    if totalCategories == 0 then
+        return Config.PenalCode, 'config', true
+    end
+
+    return normalized, 'legaldocs', false
+end
+
+local function ResolvePenalCodePayload()
+    if GetResourceState('Daexv_legaldocuments') == 'started' then
+        local ok, legalPenalCode = pcall(function()
+            return exports['Daexv_legaldocuments']:GetPenalCodeCatalog()
+        end)
+
+        if ok and type(legalPenalCode) == 'table' and next(legalPenalCode) ~= nil then
+            return NormalizeMdtPenalCode(legalPenalCode)
+        end
+
+        print('^3[Daexv_mdt]^7 No se pudo leer el Codigo Penal desde Daexv_legaldocuments. Se usara el fallback local.')
+    end
+
+    return Config.PenalCode, 'config', true
+end
+
+local function normalizeFineGeoKey(value)
+    return string.lower(Trim(value, 80))
+end
+
+function ResolveFineJurisdiction(stateName, countyName, townName)
+    local states = Config.FineJurisdictions or {}
+    local stateKey = normalizeFineGeoKey(stateName)
+    local countyKey = normalizeFineGeoKey(countyName)
+    local townKey = normalizeFineGeoKey(townName)
+    if stateKey == '' or countyKey == '' or townKey == '' then
+        return nil, nil, nil
+    end
+
+    for _, stateEntry in ipairs(states) do
+        if normalizeFineGeoKey(stateEntry.name) == stateKey then
+            for _, countyEntry in ipairs(stateEntry.counties or {}) do
+                if normalizeFineGeoKey(countyEntry.name) == countyKey then
+                    for _, townEntry in ipairs(countyEntry.towns or {}) do
+                        if normalizeFineGeoKey(townEntry) == townKey then
+                            return stateEntry.name, countyEntry.name, townEntry
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nil, nil, nil
+end
+
+function BuildFineJurisdiction(stateName, countyName, townName)
+    local parts = {}
+    local town = Trim(townName, 80)
+    local county = Trim(countyName, 80)
+    local state = Trim(stateName, 80)
+
+    if town ~= '' then parts[#parts + 1] = town end
+    if county ~= '' then parts[#parts + 1] = county end
+    if state ~= '' then parts[#parts + 1] = state end
+
+    return table.concat(parts, ', ')
+end
+
+function BuildFineLocationDisplay(stateName, countyName, townName, locationDetail, fallbackLocation)
+    local jurisdiction = BuildFineJurisdiction(stateName, countyName, townName)
+    local detail = Trim(locationDetail, 200)
+    if jurisdiction ~= '' and detail ~= '' then
+        return jurisdiction .. ' - ' .. detail
+    end
+    if jurisdiction ~= '' then
+        return jurisdiction
+    end
+    if detail ~= '' then
+        return detail
+    end
+    return Trim(fallbackLocation, 200)
+end
+
 function NotifyPlayer(src, message, duration)
     TriggerClientEvent('vorp:TipRight', src, tostring(message or ''), duration or 4000)
 end
@@ -35,6 +154,11 @@ end
 function IsAllowedValue(value, allowed, fallback)
     value = tostring(value or '')
     if allowed[value] then return value end
+    for _, entry in ipairs(allowed or {}) do
+        if tostring(entry) == value then
+            return value
+        end
+    end
     return fallback
 end
 
@@ -53,11 +177,13 @@ function GetCharacterData(src)
     if not character then return nil end
     local firstname = Trim(character.firstname or 'Unknown', 50)
     local lastname = Trim(character.lastname or 'Officer', 50)
+    local fullname = Trim(firstname .. ' ' .. lastname, 100)
     return {
         identifier = tostring(character.charIdentifier or character.identifier or character.charidentifier or ''),
         firstname = firstname,
         lastname = lastname,
-        fullname = Trim(firstname .. ' ' .. lastname, 100),
+        fullname = fullname,
+        name = fullname,
         job = tostring(character.job or ''),
         jobLabel = tostring(character.jobLabel or character.job or '')
     }
@@ -110,6 +236,10 @@ function HasMDTItem(src)
     end)
     if okItem and item then
         local itemCount = item.count or item.amount or item.quantity or item.qty or 0
+        if type(item.getCount) == 'function' then
+            local okCount, dynamicCount = pcall(function() return item:getCount() end)
+            if okCount and tonumber(dynamicCount or 0) > 0 then return true end
+        end
         if tonumber(itemCount or 0) > 0 then return true end
     end
 
@@ -196,13 +326,17 @@ function OpenMdtForSource(src, openedByItem)
     if not loginOk then
         print('^3[Daexv_mdt]^7 Officer login update skipped. Run sql/install.sql if MDT tables are missing: ' .. tostring(loginErr))
     end
+    local penalCode, penalCodeSource, penalCodeFallback = ResolvePenalCodePayload()
     TriggerClientEvent('daexv_mdt:open', src, {
         player = { name = charData.fullname, rank = rank, level = GetOfficerLevel(src), identifier = charData.identifier },
         serverName = Config.ServerName,
         departmentSeal = Config.DepartmentSeal,
-        penalCode = Config.PenalCode,
+        penalCode = penalCode,
+        penalCodeSource = penalCodeSource,
+        penalCodeFallback = penalCodeFallback == true,
         caseTypes = Config.CaseTypes,
         caseStates = Config.CaseStates,
+        fineJurisdictions = Config.FineJurisdictions or {},
     })
 end
 

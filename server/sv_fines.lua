@@ -1,4 +1,4 @@
-local fineStatuses = { pending=true, paid=true, overdue=true, cancelled=true, waived=true }
+﻿local fineStatuses = { pending=true, paid=true, overdue=true, cancelled=true, waived=true }
 local payMethods = { cash=true, bank=true, seized=true, other=true }
 
 local function getOnlineSourceByIdentifier(identifier)
@@ -15,7 +15,21 @@ end
 
 local function getFineById(fineId)
     local rows = MySQL.query.await('SELECT * FROM daexv_mdt_fines WHERE id = ? LIMIT 1', { ToInt(fineId) })
-    return rows and rows[1] or nil
+    local fine = rows and rows[1] or nil
+    if fine then
+        fine.jurisdiction = BuildFineJurisdiction(fine.state_name, fine.county_name, fine.town_name)
+        fine.location_display = BuildFineLocationDisplay(fine.state_name, fine.county_name, fine.town_name, fine.location_detail, fine.location)
+    end
+    return fine
+end
+
+local function hydrateFineRows(rows)
+    rows = rows or {}
+    for _, row in ipairs(rows) do
+        row.jurisdiction = BuildFineJurisdiction(row.state_name, row.county_name, row.town_name)
+        row.location_display = BuildFineLocationDisplay(row.state_name, row.county_name, row.town_name, row.location_detail, row.location)
+    end
+    return rows
 end
 
 local function calculatePaymentAmount(fine)
@@ -42,11 +56,16 @@ end
 
 local function createCitationCase(officer, citizen, data)
     local title = 'Citacion: ' .. data.charge .. ' - ' .. citizen.fullname
-    local summary = 'Multa emitida por ' .. data.charge .. ' en ' .. (data.location ~= '' and data.location or 'Ubicacion desconocida') .. '. Monto: $' .. tostring(data.amount) .. '.'
+    local locationLabel = data.location_display ~= '' and data.location_display or 'Ubicacion desconocida'
+    local summary = 'Multa emitida por ' .. data.charge .. ' en ' .. locationLabel .. '. Monto: $' .. tostring(data.amount) .. '.'
+    local content = data.description ~= '' and data.description or summary
+    if data.location_detail ~= '' then
+        content = content .. ' Detalle del lugar: ' .. data.location_detail .. '.'
+    end
     return MySQL.insert.await([[INSERT INTO daexv_mdt_cases
         (title, case_type, state, summary, content, access_level, citizen_id, citizen_name, created_by, created_by_name)
         VALUES (?, 'citation', 'open', ?, ?, 'law', ?, ?, ?, ?)]], {
-        title, summary, data.description or summary, citizen.id, citizen.fullname, officer.identifier, officer.fullname
+        title, summary, content, citizen.id, citizen.fullname, officer.identifier, officer.fullname
     })
 end
 
@@ -60,6 +79,12 @@ AddEventHandler('daexv_mdt:server:issueFine', function(data)
     local amount = ToInt(data.amount)
     if individualId <= 0 or charge == '' or amount <= 0 then
         NotifyPlayer(src, 'Ciudadano, cargo y monto son obligatorios para emitir una multa.', 4500)
+        return
+    end
+
+    local resolvedState, resolvedCounty, resolvedTown = ResolveFineJurisdiction(data.stateName or data.state_name, data.countyName or data.county_name, data.townName or data.town_name)
+    if not resolvedState or not resolvedCounty or not resolvedTown then
+        NotifyPlayer(src, 'Debes seleccionar una jurisdiccion valida de estado, condado y pueblo.', 5000)
         return
     end
 
@@ -79,18 +104,25 @@ AddEventHandler('daexv_mdt:server:issueFine', function(data)
         category = Trim(data.category, 50),
         amount = amount,
         description = Trim(data.description, 4000),
-        location = Trim(data.location, 200)
+        state_name = resolvedState,
+        county_name = resolvedCounty,
+        town_name = resolvedTown,
+        location_detail = Trim(data.locationDetail or data.location_detail, 200),
     }
+    payload.location = BuildFineJurisdiction(payload.state_name, payload.county_name, payload.town_name)
+    payload.location_display = BuildFineLocationDisplay(payload.state_name, payload.county_name, payload.town_name, payload.location_detail, payload.location)
+
     local caseRefId = data.caseRefId and ToInt(data.caseRefId) or data.case_ref_id and ToInt(data.case_ref_id) or nil
     if not caseRefId or caseRefId <= 0 then
         caseRefId = createCitationCase(officer, citizen, payload)
     end
 
     local fineId = MySQL.insert.await([[INSERT INTO daexv_mdt_fines
-        (individual_id, citizen_identifier, citizen_name, charge, penal_code, category, description, location, amount, status, due_date,
+        (individual_id, citizen_identifier, citizen_name, charge, penal_code, category, description, location, location_detail, state_name, county_name, town_name, amount, status, due_date,
          officer_identifier, officer_name, officer_rank, case_ref_id)
-        VALUES (?,?,?,?,?,?,?,?,?,'pending',DATE_ADD(NOW(), INTERVAL ? DAY),?,?,?,?)]], {
-        citizen.id, citizen.identifier, citizen.fullname, payload.charge, payload.penalCode, payload.category, payload.description, payload.location, payload.amount,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',DATE_ADD(NOW(), INTERVAL ? DAY),?,?,?,?)]], {
+        citizen.id, citizen.identifier, citizen.fullname, payload.charge, payload.penalCode, payload.category, payload.description, payload.location, payload.location_detail,
+        payload.state_name, payload.county_name, payload.town_name, payload.amount,
         ToInt(Config.Fines.OverdueDays, 3), officer.identifier, officer.fullname, GetOfficerRank(src) or '', caseRefId
     })
 
@@ -100,19 +132,31 @@ AddEventHandler('daexv_mdt:server:issueFine', function(data)
         amount = payload.amount,
     }, officer.identifier)
 
-    AuditLog(officer.identifier, officer.fullname, 'issued_fine', 'fine', fineId, 'Issued $' .. amount .. ' fine to ' .. citizen.fullname .. ' for ' .. charge)
+    AuditLog(officer.identifier, officer.fullname, 'issued_fine', 'fine', fineId, 'Issued $' .. amount .. ' fine to ' .. citizen.fullname .. ' for ' .. charge .. ' in ' .. payload.location)
 
     if Config.Fines.NotifyOnFine then
         local targetSource = getOnlineSourceByIdentifier(citizen.identifier)
         if targetSource then
-            local fineData = { id = fineId, amount = amount, charge = charge, penalCode = payload.penalCode, status = 'pending', dueDate = Config.Fines.OverdueDays }
+            local fineData = {
+                id = fineId,
+                amount = amount,
+                charge = charge,
+                penalCode = payload.penalCode,
+                status = 'pending',
+                dueDate = Config.Fines.OverdueDays,
+                state_name = payload.state_name,
+                county_name = payload.county_name,
+                town_name = payload.town_name,
+                location_detail = payload.location_detail,
+                location_display = payload.location_display,
+            }
             TriggerClientEvent('daexv_mdt:client:fineReceived', targetSource, fineData)
-            NotifyPlayer(targetSource, 'Has recibido una multa de $' .. amount .. ' por ' .. charge .. '. Usa /' .. Config.Fines.CitizenCommand .. ' para verla.', 8000)
+            NotifyPlayer(targetSource, 'Has recibido una multa de $' .. amount .. ' por ' .. charge .. ' en ' .. payload.location .. '. Usa /' .. Config.Fines.CitizenCommand .. ' para verla.', 8000)
         end
     end
 
-    NotifyPlayer(src, 'Multa de $' .. amount .. ' emitida a ' .. citizen.fullname .. '.', 5000)
-    TriggerClientEvent('daexv_mdt:client:fineIssued', src, { success = true, fineId = fineId })
+    NotifyPlayer(src, 'Multa de $' .. amount .. ' emitida a ' .. citizen.fullname .. ' en ' .. payload.location .. '.', 5000)
+    TriggerClientEvent('daexv_mdt:client:fineIssued', src, { success = true, fineId = fineId, location = payload.location, locationDisplay = payload.location_display })
 end)
 
 RegisterNetEvent('daexv_mdt:server:getFines')
@@ -120,7 +164,7 @@ AddEventHandler('daexv_mdt:server:getFines', function(individualId, cbId)
     local src = source
     if not IsLawEnforcement(src) or not HasPermission(src, 'view_fines') then return end
     local rows = MySQL.query.await('SELECT * FROM daexv_mdt_fines WHERE individual_id = ? ORDER BY FIELD(status,"overdue","pending","paid","cancelled","waived"), created_at DESC', { ToInt(individualId) })
-    SendCallback(src, cbId, rows or {})
+    SendCallback(src, cbId, hydrateFineRows(rows))
 end)
 
 RegisterNetEvent('daexv_mdt:server:getMyFines')
@@ -129,7 +173,7 @@ AddEventHandler('daexv_mdt:server:getMyFines', function()
     local charData = GetCharacterData(src)
     if not charData then return end
     local rows = MySQL.query.await('SELECT * FROM daexv_mdt_fines WHERE citizen_identifier = ? AND status IN ("pending","overdue") ORDER BY FIELD(status,"overdue","pending"), created_at DESC', { charData.identifier })
-    TriggerClientEvent('daexv_mdt:client:myFines', src, rows or {})
+    TriggerClientEvent('daexv_mdt:client:myFines', src, hydrateFineRows(rows))
 end)
 
 RegisterNetEvent('daexv_mdt:server:payFine')
@@ -242,26 +286,61 @@ RegisterNetEvent('daexv_mdt:server:getAllFines')
 AddEventHandler('daexv_mdt:server:getAllFines', function(filters, page, cbId)
     local src = source
     if not IsLawEnforcement(src) or not HasPermission(src, 'view_fines') then return end
-    filters = filters or {}; page = math.max(1, ToInt(page, 1))
+    filters = filters or {}
+    page = math.max(1, ToInt(page, 1))
     local where = { '1=1' }
     local params = {}
     local search = Trim(filters.search, 80)
     if search ~= '' then
         local like = '%' .. search .. '%'
-        where[#where+1] = '(citizen_name LIKE ? OR charge LIKE ? OR penal_code LIKE ? OR officer_name LIKE ?)'
-        params[#params+1] = like; params[#params+1] = like; params[#params+1] = like; params[#params+1] = like
+        where[#where+1] = '(citizen_name LIKE ? OR charge LIKE ? OR penal_code LIKE ? OR officer_name LIKE ? OR location LIKE ? OR location_detail LIKE ? OR town_name LIKE ? OR county_name LIKE ? OR state_name LIKE ?)'
+        params[#params+1] = like
+        params[#params+1] = like
+        params[#params+1] = like
+        params[#params+1] = like
+        params[#params+1] = like
+        params[#params+1] = like
+        params[#params+1] = like
+        params[#params+1] = like
+        params[#params+1] = like
     end
     local status = tostring(filters.status or '')
-    if status ~= '' and fineStatuses[status] then where[#where+1] = 'status = ?'; params[#params+1] = status end
-    if Trim(filters.officerIdentifier, 60) ~= '' then where[#where+1] = 'officer_identifier = ?'; params[#params+1] = Trim(filters.officerIdentifier, 60) end
+    if status ~= '' and fineStatuses[status] then
+        where[#where+1] = 'status = ?'
+        params[#params+1] = status
+    end
+    if Trim(filters.officerIdentifier, 60) ~= '' then
+        where[#where+1] = 'officer_identifier = ?'
+        params[#params+1] = Trim(filters.officerIdentifier, 60)
+    end
+    local stateName = Trim(filters.state or filters.stateName, 80)
+    if stateName ~= '' then
+        where[#where+1] = 'state_name = ?'
+        params[#params+1] = stateName
+    end
+    local countyName = Trim(filters.county or filters.countyName, 80)
+    if countyName ~= '' then
+        where[#where+1] = 'county_name = ?'
+        params[#params+1] = countyName
+    end
+    local townName = Trim(filters.town or filters.townName, 80)
+    if townName ~= '' then
+        where[#where+1] = 'town_name = ?'
+        params[#params+1] = townName
+    end
+
     local clause = table.concat(where, ' AND ')
     local countRows = MySQL.query.await('SELECT COUNT(*) AS total FROM daexv_mdt_fines WHERE ' .. clause, params)
     local total = countRows and countRows[1] and countRows[1].total or 0
     local fetchParams = {}
-    for _, v in ipairs(params) do fetchParams[#fetchParams+1] = v end
-    fetchParams[#fetchParams+1] = 15; fetchParams[#fetchParams+1] = (page - 1) * 15
+    for _, value in ipairs(params) do
+        fetchParams[#fetchParams + 1] = value
+    end
+    fetchParams[#fetchParams + 1] = 15
+    fetchParams[#fetchParams + 1] = (page - 1) * 15
+
     local rows = MySQL.query.await('SELECT * FROM daexv_mdt_fines WHERE ' .. clause .. ' ORDER BY FIELD(status,"overdue","pending","paid","cancelled","waived"), created_at DESC LIMIT ? OFFSET ?', fetchParams)
-    SendCallback(src, cbId, { fines = rows or {}, totalCount = total, page = page })
+    SendCallback(src, cbId, { fines = hydrateFineRows(rows), totalCount = total, page = page })
 end)
 
 CreateThread(function()
@@ -270,7 +349,3 @@ CreateThread(function()
         MySQL.update.await('UPDATE daexv_mdt_fines SET status = "overdue" WHERE status = "pending" AND due_date IS NOT NULL AND due_date < NOW()', {})
     end
 end)
-
-
-
-
