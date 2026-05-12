@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Daexv MDT</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+
+
+<h2 class="sr-only">Daexv MDT - clipboard-style western law enforcement terminal</h2>
+
+<div class="mdt-wrap">
+  <div class="clip-top"><div class="clip-inner"></div></div>
+
+  <div class="board">
+    <div class="tabs-r">
+      <div class="rtab on" onclick="sw('citizens',this)">Ciudadanos</div>
+      <div class="rtab" onclick="sw('filing',this)">Archivo</div>
+      <div class="rtab" onclick="sw('wanted',this)">Buscados</div>
+      <div class="rtab" onclick="sw('gangs',this)">Bandas</div>
+      <div class="rtab" onclick="sw('dash',this)">Panel</div>
+      <div class="rtab" onclick="sw('tg',this)">Linea de Avisos</div>
+    </div>
+
+    <div class="content">
+      <div class="hdr">
+        <div class="hdr-left">
+          <div class="seal"><div class="seal-inner">MSO</div></div>
+          <span class="dept">Oficina del Sheriff de Monroe</span>
+        </div>
+        <span class="off">Peter Walsh</span>
+      </div>
+
+      <!-- CITIZENS -->
+      <div id="p-citizens" class="panel on">
+        <div class="ptitle-bar">
+          <div class="ptitle">Registro Ciudadano</div>
+          <div class="ptitle-actions"><button class="pa">Agregar Ciudadano</button><button class="pa" onclick="renderC(C)">Actualizar</button><button class="pa" onclick="showP('citizens')">Volver</button></div>
+        </div>
+        <div class="sbar">
+          <input class="si" placeholder="Buscar..." oninput="fC(this.value)">
+          <select class="ss" id="cf" onchange="fC(document.querySelector('#p-citizens .si').value)"><option value="all">Todos</option><option value="wanted">Buscado</option><option value="dangerous">Peligroso</option><option value="clear">Limpio</option></select>
+        </div>
+        <div id="clist"></div>
+      </div>
+
+      <!-- PROFILE -->
+      <div id="p-profile" class="panel">
+        <div class="ptitle-bar">
+          <div class="ptitle">Registro Ciudadano</div>
+          <div class="ptitle-actions"><button class="pa">Archivar</button><button class="pa">Editar</button><button class="pa" onclick="renderC(C);showP('citizens')">Actualizar</button><button class="pa" onclick="showP('citizens')">Volver</button></div>
+        </div>
+        <div class="prof-name-bar">
+          <span class="prof-name" id="pn"></span>
+          <span class="prof-num" id="pid"></span>
+        </div>
+        <div class="prof-top">
+          <div class="prof-img" id="pimg"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Camponotus_flavomarginatus_ant.jpg/120px-Camponotus_flavomarginatus_ant.jpg" style="display:none" id="pimgi"></div>
+          <div class="prof-data">
+            <table class="pdt">
+              <tr><td class="lab">Nombre</td><td class="val" id="pfn"></td></tr>
+              <tr><td class="lab">Alias</td><td class="val" id="pfa"></td></tr>
+              <tr><td class="lab">Afiliaciones</td><td class="val" id="pfaf"></td></tr>
+              <tr><td class="lab">Telegram</td><td class="val" id="pftg"></td></tr>
+            </table>
+            <div class="abrow">
+              <button class="abtn">Reporte de Arresto</button>
+              <button class="abtn">Crear Orden</button>
+              <button class="abtn">Reporte Medico</button>
+            </div>
+            <div class="acc-info" id="pfacc"></div>
+          </div>
+        </div>
+        <div class="sec" id="pw-sec" style="display:none">
+          <div class="stit">Orden de Arresto</div>
+          <div class="w-alert">Este ciudadano es buscado por una orden de arresto</div>
+          <table class="pdt"><tr><td class="lab">Titulo de Orden</td><td id="pwt" style="color:#8b1a1a;font-style:italic;font-size:12px"></td></tr>
+          <tr><td class="lab">Orden Creada</td><td id="pwd" style="font-size:12px"></td></tr></table>
+        </div>
+        <div class="sec">
+          <div class="stit">Notas</div>
+          <div class="ntext" id="pfnotes"></div>
+          <div id="pfassocw" style="display:none">
+            <div class="assoc-title">Suele andar con</div>
+            <div class="assoc-name" id="pfassoc"></div>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="stit">Registro Criminal</div>
+          <table class="rtable"><thead><tr><th></th><th>Titulo</th><th>Oficial</th><th>Fecha</th></tr></thead><tbody id="pfcr"></tbody></table>
+        </div>
+        <div class="sec">
+          <div class="stit">Registro Medico</div>
+          <table class="rtable"><thead><tr><th></th><th>Titulo</th><th>Medico</th><th>Fecha</th></tr></thead><tbody id="pfmr"></tbody></table>
+        </div>
+      </div>
+
+      <!-- FILING -->
+      <div id="p-filing" class="panel">
+        <div class="ptitle-bar">
+          <div class="ptitle">Archivo</div>
+          <div class="ptitle-actions"><button class="pa">Nuevo</button><button class="pa">Actualizar</button><button class="pa" onclick="showP('filing')">Volver</button></div>
+        </div>
+        <div class="sbar">
+          <input class="si" placeholder="Buscar..." oninput="fF(this.value)">
+          <select class="ss"><option>Todos los Tipos</option><option>Expediente</option><option>Reporte de Arresto</option><option>Orden de Arresto</option><option>Reporte Medico</option></select>
+          <select class="ss"><option>Todos los Estados</option><option>Abierto</option><option>En curso</option><option>Completo</option></select>
+        </div>
+        <table class="ftable"><thead><tr><th></th><th>Titulo</th><th>Type</th><th>State</th><th>Ultima Actualizacion</th></tr></thead><tbody id="ftb"></tbody></table>
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;border-top:1px dashed #c4a878;font-size:11px;color:#5a3e1b">Prev&nbsp; 1 &nbsp;2&nbsp; 3&nbsp; 4&nbsp; 5 &nbsp;Next</div>
+      </div>
+
+      <!-- FILING DETAIL -->
+      <div id="p-fdetail" class="panel">
+        <div class="ptitle-bar">
+          <div class="ptitle">Archivo</div>
+          <div class="ptitle-actions"><button class="pa">Guardar</button><button class="pa">Actualizar</button><button class="pa" onclick="showP('filing')">Volver</button></div>
+        </div>
+        <div class="fdetail" id="fdcontent"></div>
+      </div>
+
+      <!-- WANTED -->
+      <div id="p-wanted" class="panel">
+        <div class="ptitle-bar">
+          <div class="ptitle">Buscados - Ordenes Activas</div>
+          <div class="ptitle-actions"><button class="pa">Nueva Orden</button><button class="pa">Actualizar</button></div>
+        </div>
+        <div id="wgrid" class="wgrid"></div>
+      </div>
+
+      <!-- GANGS -->
+      <div id="p-gangs" class="panel">
+        <div class="ptitle-bar">
+          <div class="ptitle">Organizaciones Criminales</div>
+          <div class="ptitle-actions"><button class="pa">Nuevo</button><button class="pa">Actualizar</button></div>
+        </div>
+        <div id="glist"></div>
+      </div>
+
+      <!-- DASHBOARD -->
+      <div id="p-dash" class="panel">
+        <div class="ptitle-bar"><div class="ptitle">Panel del Sheriff</div><div class="ptitle-actions"><button class="pa">Actualizar</button></div></div>
+        <div class="dstats">
+          <div class="dstat"><span class="dsv">5</span><div class="dsl">Citizens Filed</div></div>
+          <div class="dstat"><span class="dsv">3</span><div class="dsl">Buscados</div></div>
+          <div class="dstat"><span class="dsv">3</span><div class="dsl">Active Warrants</div></div>
+          <div class="dstat"><span class="dsv">6</span><div class="dsl">Abierto Charges</div></div>
+          <div class="dstat"><span class="dsv">5</span><div class="dsl">Bandas Conocidas</div></div>
+          <div class="dstat"><span class="dsv">8</span><div class="dsl">Activity (7d)</div></div>
+        </div>
+        <div class="sec"><div class="stit">Actividad Reciente</div><div class="afeed" id="afeed"></div></div>
+      </div>
+
+      <!-- TELEGRAM -->
+      <div id="p-tg" class="panel">
+        <div class="ptitle-bar"><div class="ptitle">Linea de Avisos - Despacho Interno</div><div class="ptitle-actions"><button class="pa">Nuevo</button><button class="pa">Entrada</button><button class="pa">Salida</button></div></div>
+        <div id="tglist"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script src="js/app.js"></script>
+</body>
+</html>
